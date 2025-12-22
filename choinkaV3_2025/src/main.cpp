@@ -31,15 +31,16 @@ void readSensor();
 void handleHttp();
 
 VL53L0X sensor;
+int currentDistance = 0;
+int level = 0;
+int lastLevel = -1;
 
 // Sieć Wi-Fi
 const char* ssid = "Orange_Internet_B340";
 const char* password = "DtrGc2Nt6ndC7dN739";
 WiFiServer server(80);
 
-int currentDistance = 0;
-int level = 0;
-int lastLevel = -1;
+
 
 // Kalibracja poziomów
 int minLevel = 0;
@@ -117,15 +118,32 @@ void loop() {
 }
 
 void readSensor() {
+
+  const int numReadings = 5;          // Liczba pomiarów do średniej (im więcej, tym płynniej)
+  static int readings[numReadings];    // Tablica na pomiary
+  static int readIndex = 0;            // Indeks aktualnego pomiaru
+  static long total = 0;               // Suma pomiarów
+
+  // 1. Odczyt surowy
   int rawDistance = sensor.readRangeContinuousMillimeters();
+  
+  // Filtracja błędów krytycznych (jeśli czujnik "odleci" na 8 metrów, ignorujemy to)
   if (rawDistance > 2000 || sensor.timeoutOccurred()) return;
 
-  currentDistance = rawDistance;
+  // 2. Mechanizm średniej kroczącej
+  total = total - readings[readIndex];    // Odejmij stary pomiar
+  readings[readIndex] = rawDistance;      // Dodaj nowy pomiar do tablicy
+  total = total + readings[readIndex];    // Dodaj nowy pomiar do sumy
+  readIndex = (readIndex + 1) % numReadings; // Przesuń indeks
+
+  currentDistance = total / numReadings;  // Wylicz średnią
+
+  // 3. Mapowanie na procenty (używamy teraz wygładzonego currentDistance)
   level = map(currentDistance, minDistance, maxDistance, 0, 100);
-  // level = constrain(level, 0, 100);
+  level = constrain(level, 0, 100);
 
   if (level != lastLevel) {
-    Serial.print("Poziom: "); Serial.print(level); Serial.println("%");
+    // Serial.print("Wygładzony poziom: "); Serial.println(level);
     lastLevel = level;
   }
 }
@@ -148,12 +166,19 @@ void handleHttp() {
   String response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n";
   response += "<!DOCTYPE HTML><html><head>";
   response += "<meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1'>";
+  response += "<title>Woda w choince</title>";
+  response += "<link rel='icon' href='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎄</text></svg>'>";
+
   response += "<style>";
   response += "body { font-family: sans-serif; text-align: center; background: #1a1a1a; color: white; padding-top: 20px; }";
+  response += ".footer { font-size: 0.8em; color: #777; margin-top: 20px; }";
   response += ".bar-bg { width: 80px; height: 350px; background: #333; margin: 20px auto; border-radius: 40px; position: relative; border: 4px solid #444; overflow: hidden; box-shadow: 0 0 20px rgba(0,0,0,0.5); }";
   response += ".bar-fill { width: 100%; background: linear-gradient(to top, #0077be, #00d4ff); position: absolute; bottom: 0; height: 0%; transition: height 0.4s ease-out; }";
   response += "h1 { font-size: 2.5em; margin-bottom: 10px; }";
   response += "</style></head><body>";
+
+  response += "<h1>🎄 Choinka 2025 🎄</h1>";
+  response += "<p style='color: #aaa; margin-bottom: 20px;'>System Monitorowania Poziomu Wody</p>";
   
   response += "<h1><span id='perc'>0</span>%</h1>";
   response += "<div class='bar-bg'><div id='fill' class='bar-fill'></div></div>";
